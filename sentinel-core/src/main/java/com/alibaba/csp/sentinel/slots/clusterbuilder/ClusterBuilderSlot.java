@@ -71,6 +71,7 @@ public class ClusterBuilderSlot extends AbstractLinkedProcessorSlot<DefaultNode>
     private volatile ClusterNode clusterNode = null;
 
     @Override
+    //同样的资源获取同样的clusterNode  ResourceWrapper 重写hashCode equal方法，所以资源名一致则表示同一个资源
     public void entry(Context context, ResourceWrapper resourceWrapper, DefaultNode node, int count,
                       boolean prioritized, Object... args)
         throws Throwable {
@@ -81,12 +82,13 @@ public class ClusterBuilderSlot extends AbstractLinkedProcessorSlot<DefaultNode>
                     clusterNode = new ClusterNode();
                     HashMap<ResourceWrapper, ClusterNode> newMap = new HashMap<>(Math.max(clusterNodeMap.size(), 16));
                     newMap.putAll(clusterNodeMap);
+                    // DefaultNode的资源为map的key
                     newMap.put(node.getId(), clusterNode);
-
                     clusterNodeMap = newMap;
                 }
             }
         }
+        //context中的Entry的CurNode中挂的clusterNode 赋值
         node.setClusterNode(clusterNode);
 
         /*
@@ -94,10 +96,11 @@ public class ClusterBuilderSlot extends AbstractLinkedProcessorSlot<DefaultNode>
          * the specific origin.
          */
         if (!"".equals(context.getOrigin())) {
+            //通过origin创建 OriginNode即StatisticNode，以origin为key存储在map中
             Node originNode = node.getClusterNode().getOrCreateOriginNode(context.getOrigin());
             context.getCurEntry().setOriginNode(originNode);
         }
-
+        //下一个entry方法
         fireEntry(context, resourceWrapper, node, count, prioritized, args);
     }
 

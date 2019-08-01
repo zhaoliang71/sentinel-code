@@ -52,19 +52,19 @@ public class StatisticSlot extends AbstractLinkedProcessorSlot<DefaultNode> {
     public void entry(Context context, ResourceWrapper resourceWrapper, DefaultNode node, int count,
                       boolean prioritized, Object... args) throws Throwable {
         try {
-            // 去校验限流
+            // 去校验限流，系统保护，黑白名单，熔断
             fireEntry(context, resourceWrapper, node, count, prioritized, args);
 
-            // 校验通过 统计数据
+            // 校验通过 统计数据  DefaultNode
             node.increaseThreadNum();
             node.addPassRequest(count);
-
+            //只有配置了指定context的来源时才会StatisticNode不为null
             if (context.getCurEntry().getOriginNode() != null) {
-                // Add count for origin node.
+                // 统计数据  StatisticNode
                 context.getCurEntry().getOriginNode().increaseThreadNum();
                 context.getCurEntry().getOriginNode().addPassRequest(count);
             }
-
+            //EntryType.IN 入口流量
             if (resourceWrapper.getType() == EntryType.IN) {
                 // Add count for global inbound entry node for global statistics.
                 Constants.ENTRY_NODE.increaseThreadNum();
