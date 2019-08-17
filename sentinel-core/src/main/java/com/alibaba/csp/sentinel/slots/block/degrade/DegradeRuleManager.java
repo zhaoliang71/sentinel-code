@@ -68,16 +68,17 @@ public final class DegradeRuleManager {
             currentProperty = property;
         }
     }
-
+    //校验熔断
     public static void checkDegrade(ResourceWrapper resource, Context context, DefaultNode node, int count)
         throws BlockException {
-
+        //获取规则
         Set<DegradeRule> rules = degradeRules.get(resource.getName());
         if (rules == null) {
             return;
         }
 
         for (DegradeRule rule : rules) {
+            //遍历规则,如果有一个规则命中,则抛出熔断异常
             if (!rule.passCheck(context, node, count)) {
                 throw new DegradeException(rule.getLimitApp(), rule);
             }
@@ -156,9 +157,12 @@ public final class DegradeRuleManager {
 
         @Override
         public void configUpdate(List<DegradeRule> conf) {
+            //校验 熔断规则
             Map<String, Set<DegradeRule>> rules = loadDegradeConf(conf);
             if (rules != null) {
+                //清空原规则Map
                 degradeRules.clear();
+                //将所有规则放入Map
                 degradeRules.putAll(rules);
             }
             RecordLog.info("[DegradeRuleManager] Degrade rules received: " + degradeRules);
@@ -182,6 +186,7 @@ public final class DegradeRuleManager {
             }
 
             for (DegradeRule rule : list) {
+                //校验熔断规则
                 if (!isValidRule(rule)) {
                     RecordLog.warn(
                         "[DegradeRuleManager] Ignoring invalid degrade rule when loading new rules: " + rule);
@@ -189,6 +194,7 @@ public final class DegradeRuleManager {
                 }
 
                 if (StringUtil.isBlank(rule.getLimitApp())) {
+                    //赋值limitApp 初始值 default
                     rule.setLimitApp(RuleConstant.LIMIT_APP_DEFAULT);
                 }
 
@@ -204,7 +210,7 @@ public final class DegradeRuleManager {
             return newRuleMap;
         }
     }
-
+    //校验规则
     public static boolean isValidRule(DegradeRule rule) {
         boolean baseValid = rule != null && !StringUtil.isBlank(rule.getResource())
             && rule.getCount() >= 0 && rule.getTimeWindow() > 0;
@@ -213,6 +219,8 @@ public final class DegradeRuleManager {
         }
         // Warn for RT mode that exceeds the {@code TIME_DROP_VALVE}.
         int maxAllowedRt = Constants.TIME_DROP_VALVE;
+        //超出此阈值的都会算作 4900 ms，若需要变更此上限可以通过启动配置项 -Dcsp.sentinel.statistic.max.rt=xxx 来配置。
+        //SentinelConfig 这个类进行一些这种默认值的初始化以及读取JVM这些数据配置的值
         if (rule.getGrade() == RuleConstant.DEGRADE_GRADE_RT && rule.getCount() > maxAllowedRt) {
             RecordLog.warn(String.format("[DegradeRuleManager] WARN: setting large RT threshold (%.1f ms) in RT mode"
                     + " will not take effect since it exceeds the max allowed value (%d ms)", rule.getCount(),

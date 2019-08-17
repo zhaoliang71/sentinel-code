@@ -162,35 +162,42 @@ public class DegradeRule extends AbstractRule {
 
     @Override
     public boolean passCheck(Context context, DefaultNode node, int acquireCount, Object... args) {
+        //熔断后cut会被设置成true,timewindow之后由定时任务改为false
         if (cut.get()) {
             return false;
         }
-
+        //获取ClusterBuilderSlot赋值的ClusterNode节点
         ClusterNode clusterNode = ClusterBuilderSlot.getClusterNode(this.getResource());
         if (clusterNode == null) {
             return true;
         }
-
+        //RT熔断
         if (grade == RuleConstant.DEGRADE_GRADE_RT) {
+            //获取平均RT
             double rt = clusterNode.avgRt();
             if (rt < this.count) {
+                //平均RT小于配置值count时,则通过校验
+                //如果校验通过则,设置passCount为0,以重新计算当前秒校验失败的此数
                 passCount.set(0);
                 return true;
             }
 
-            // Sentinel will degrade the service only if count exceeds.
+            // 如果校验失败的此数少于5次,则算做校验通过  RT_MAX_EXCEED_N:默认值5
             if (passCount.incrementAndGet() < RT_MAX_EXCEED_N) {
                 return true;
             }
+            //按异常比率熔断
         } else if (grade == RuleConstant.DEGRADE_GRADE_EXCEPTION_RATIO) {
+            //当前秒的异常数
             double exception = clusterNode.exceptionQps();
+            //当前秒的成功数
             double success = clusterNode.successQps();
+            //当前秒的总数(校验成功(pass)+校验失败的(block))MetricEvent
             double total = clusterNode.totalQps();
-            // if total qps less than RT_MAX_EXCEED_N, pass.
+            // 总数小于5次 不降级
             if (total < RT_MAX_EXCEED_N) {
                 return true;
             }
-
             double realSuccess = success - exception;
             if (realSuccess <= 0 && exception < RT_MAX_EXCEED_N) {
                 return true;
@@ -199,15 +206,26 @@ public class DegradeRule extends AbstractRule {
             if (exception / success < count) {
                 return true;
             }
+            //按异常次数降级
         } else if (grade == RuleConstant.DEGRADE_GRADE_EXCEPTION_COUNT) {
+            //获取当前一分钟的异常总次数
+            //因为此处是一分钟, 所以,如果timeWindow的时间结束后,仍然处于当前这一分钟范围,则应该会直接降级,因为当前分钟异常次数超过了规则配置次数
             double exception = clusterNode.totalException();
+            //总次数小于配置count 则校验通过
             if (exception < count) {
                 return true;
             }
         }
+        //已经校验失败,应该降级
+        //将cut 设置为true,为true时直接回降级
 
+        //unsafe.compareAndSwapInt(this, valueOffset, e, u)
+        //expect表示期望的值,即遇到这个值,则将value改为update值,在这里就是遇到false便改成true,更新成功返回true
+        //如果遇到的值不是expect值则不做任何处理,并返回个false
         if (cut.compareAndSet(false, true)) {
+            //创建定时任务
             ResetTask resetTask = new ResetTask(this);
+            //timeWindow时间后,执行resetTask这个定时任务
             pool.schedule(resetTask, timeWindow, TimeUnit.SECONDS);
         }
 
@@ -224,7 +242,7 @@ public class DegradeRule extends AbstractRule {
             ", timeWindow=" + timeWindow +
             "}";
     }
-
+    //定时任务
     private static final class ResetTask implements Runnable {
 
         private DegradeRule rule;
@@ -235,7 +253,9 @@ public class DegradeRule extends AbstractRule {
 
         @Override
         public void run() {
+            //将校验失败次数设置为0,用来设定5次失败内不降级
             rule.getPassCount().set(0);
+            //将cut设置为false,表示进行正常校验流程
             rule.cut.set(false);
         }
     }
